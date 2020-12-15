@@ -30,7 +30,7 @@ BUILD_NUMBER=custom
 MACOSX_DEPLOYMENT_TARGET=10.8
 
 # Version of packages that will be compiled by this meta-package
-PYTHON_VERSION=3.8.3
+PYTHON_VERSION=3.8.6
 PYTHON_VER=$(basename $(PYTHON_VERSION))
 
 OPENSSL_VERSION_NUMBER=1.1.1
@@ -49,10 +49,11 @@ TARGETS-macOS=macosx.x86_64
 CFLAGS-macOS=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
 
 # iOS targets
-TARGETS-iOS=iphonesimulator.x86_64 iphoneos.arm64
-CFLAGS-iOS=-mios-version-min=8.0 -fembed-bitcode
-CFLAGS-iphoneos.arm64=
-CFLAGS-iphonesimulator.x86_64=
+TARGETS-iOS=iphonesimulator.arm64 #iphonesimulator.x86_64 iphoneos.arm64
+CFLAGS-iOS=
+CFLAGS-iphoneos.arm64=-mios-version-min=8.0 -fembed-bitcode
+CFLAGS-iphonesimulator.x86_64=-mios-simulator-version-min=8.0
+CFLAGS-iphonesimulator.arm64=-mios-simulator-version-min=8.0
 
 # tvOS targets
 TARGETS-tvOS=appletvsimulator.x86_64 appletvos.arm64
