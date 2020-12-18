@@ -49,11 +49,12 @@ TARGETS-macOS=macosx.x86_64
 CFLAGS-macOS=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
 
 # iOS targets
-TARGETS-iOS=iphonesimulator.arm64 #iphonesimulator.x86_64 iphoneos.arm64
+TARGETS-iOS=iphonesimulator.x86_64 iphoneos.arm64
 CFLAGS-iOS=
 CFLAGS-iphoneos.arm64=-mios-version-min=8.0 -fembed-bitcode
 CFLAGS-iphonesimulator.x86_64=-mios-simulator-version-min=8.0
 CFLAGS-iphonesimulator.arm64=-mios-simulator-version-min=8.0
+CFLAGS-maccatalyst.arm64=--target=arm64-apple-ios-macabi -mios-version-min=8.0
 
 # tvOS targets
 TARGETS-tvOS=appletvsimulator.x86_64 appletvos.arm64
@@ -68,6 +69,20 @@ CFLAGS-watchOS=-mwatchos-version-min=4.0 -fembed-bitcode
 CFLAGS-watchsimulator.i386=
 CFLAGS-watchos.armv7k=
 PYTHON_CONFIGURE-watchOS=ac_cv_func_sigaltstack=no
+
+# .xcframework
+SDKS-xcframework=iphoneos iphonesimulator maccatalyst appletvos appletvsimulator watchos #watchsimulator
+SDKS-macOS=
+SDKS-iOS=iphoneos iphonesimulator maccatalyst
+SDKS-tvOS=appletvos appletvsimulator
+SDKS-watchOS=watchos watchsimulator
+ARCHS-iphoneos=arm64
+ARCHS-iphonesimulator=arm64 x86_64
+ARCHS-maccatalyst=x86_64
+ARCHS-appletvos=arm64
+ARCHS-appletvsimulator=x86_64
+ARCHS-watchos=armv7k
+ARCHS-watchsimulator=i386
 
 # override machine types for arm64
 MACHINE_DETAILED-arm64=aarch64
@@ -175,7 +190,11 @@ MACHINE_SIMPLE-$1=$$(MACHINE_SIMPLE-$$(ARCH-$1))
 else
 MACHINE_SIMPLE-$1=$$(ARCH-$1)
 endif
+ifeq ($$(basename $1),maccatalyst)
+SDK-$1=macosx
+else
 SDK-$1=$$(basename $1)
+endif
 
 SDK_ROOT-$1=$$(shell xcrun --sdk $$(SDK-$1) --show-sdk-path)
 CC-$1=xcrun --sdk $$(SDK-$1) clang \
@@ -291,6 +310,7 @@ else
 		cp -f $(PROJECT_DIR)/patch/Python/Setup.$2-$$(ARCH-$1) $$(PYTHON_DIR-$1)/Modules/Setup.$2-$$(ARCH-$1); fi
 	cd $$(PYTHON_DIR-$1) && PATH=$(PROJECT_DIR)/$(PYTHON_DIR-macOS)/dist/bin:$(PATH) ./configure \
 		CC="$$(CC-$1)" LD="$$(CC-$1)" \
+		LDFLAGS="-L$(PROJECT_DIR)/$$(OPENSSL_DIR-$1) -lssl -lcrypto -L$(PROJECT_DIR)/$$(BZIP2_DIR-$1) -lbz2 -L$(PROJECT_DIR)/$$(XZ_DIR-$1) -llzma" \
 		--host=$$(MACHINE_DETAILED-$1)-apple-$(shell echo $2 | tr '[:upper:]' '[:lower:]') \
 		--build=x86_64-apple-darwin$(shell uname -r) \
 		--prefix=$(PROJECT_DIR)/$$(PYTHON_DIR-$1)/dist \
@@ -317,11 +337,40 @@ vars-$1:
 endef
 
 #
+# Build for specified SDK
+# Parameters:
+# - $1 - SDK
+# - $2 - OS
+define build-sdk
+$$(foreach arch,$$(ARCHS-$1),$$(eval $$(call build-target,$1.$$(arch),$2)))
+
+build/$1/openssl/lib/libssl.a: $$(foreach arch,$$(ARCHS-$1),$$(OPENSSL_DIR-$1.$$(arch))/libssl.a)
+	mkdir -p build/$1/openssl/lib
+	xcrun lipo -create -o $$@ $$^
+
+build/$1/openssl/lib/libcrypto.a: $$(foreach arch,$$(ARCHS-$1),$$(OPENSSL_DIR-$1.$$(arch))/libcrypto.a)
+	mkdir -p build/$1/openssl/lib
+	xcrun lipo -create -o $$@ $$^
+
+build/$1/bzip2/lib/libbz2.a: $$(foreach arch,$$(ARCHS-$1),$$(BZIP2_DIR-$1.$$(arch))/libbz2.a)
+	mkdir -p build/$1/bzip2/lib
+	xcrun lipo -create -o $$@ $$^
+
+build/$1/xz/lib/liblzma.a: $$(foreach arch,$$(ARCHS-$1),$$(XZ_DIR-$1.$$(arch))/src/liblzma/.libs/liblzma.a)
+	mkdir -p build/$1/xz/lib
+	xcrun lipo -create -o $$@ $$^
+
+build/$1/python/lib/libpython$(PYTHON_VER).a: $$(foreach arch,$$(ARCHS-$1),$$(PYTHON_DIR-$1.$$(arch))/dist/lib/libpython$(PYTHON_VER).a)
+	mkdir -p build/$1/python/lib
+	xcrun lipo -create -o $$@ $$^
+endef
+
+#
 # Build for specified OS (from $(OS))
 # Parameters:
 # - $1 - OS
 define build
-$$(foreach target,$$(TARGETS-$1),$$(eval $$(call build-target,$$(target),$1)))
+$$(foreach sdk,$$(SDKS-$1),$$(eval $$(call build-sdk,$$(sdk),$1)))
 
 OPENSSL_FRAMEWORK-$1=build/$1/Support/OpenSSL
 BZIP2_FRAMEWORK-$1=build/$1/Support/BZip2
@@ -453,6 +502,28 @@ vars-$1: $$(foreach target,$$(TARGETS-$1),vars-$$(target))
 endef
 
 $(foreach os,$(OS),$(eval $(call build,$(os))))
+
+# Create .xcframeworks
+
+dist/SSL.xcframework: $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/openssl/lib/libssl.a)
+	rm -rf $@
+	xcodebuild -create-xcframework $(foreach lib,$^,-library $(lib)) -output $@
+
+dist/Crypto.xcframework: $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/openssl/lib/libcrypto.a)
+	rm -rf $@
+	xcodebuild -create-xcframework $(foreach lib,$^,-library $(lib)) -output $@
+
+dist/Bzip2.xcframework: $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/bzip2/lib/libbz2.a)
+	rm -rf $@
+	xcodebuild -create-xcframework $(foreach lib,$^,-library $(lib)) -output $@
+
+dist/XZ.xcframework: $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/xz/lib/liblzma.a)
+	rm -rf $@
+	xcodebuild -create-xcframework $(foreach lib,$^,-library $(lib)) -output $@
+
+dist/Python.xcframework: $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/python/lib/libpython$(PYTHON_VER).a)
+	rm -rf $@
+	xcodebuild -create-xcframework $(foreach lib,$^,-library $(lib)) -output $@
 
 ###########################################################################
 # Compiling Python Libraries with binary components
