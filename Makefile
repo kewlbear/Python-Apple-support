@@ -25,16 +25,18 @@
 # Current director
 PROJECT_DIR=$(shell pwd)
 
+ARCH=$(shell uname -m)
+
 BUILD_NUMBER=custom
 
 MACOSX_DEPLOYMENT_TARGET=10.8
 
 # Version of packages that will be compiled by this meta-package
-PYTHON_VERSION=3.8.6
+PYTHON_VERSION=3.10.0
 PYTHON_VER=$(basename $(PYTHON_VERSION))
 
 OPENSSL_VERSION_NUMBER=1.1.1
-OPENSSL_REVISION=g
+OPENSSL_REVISION=i
 OPENSSL_VERSION=$(OPENSSL_VERSION_NUMBER)$(OPENSSL_REVISION)
 
 BZIP2_VERSION=1.0.8
@@ -45,7 +47,7 @@ XZ_VERSION=5.2.5
 OS=macOS iOS tvOS watchOS
 
 # macOS targets
-TARGETS-macOS=macosx.x86_64
+TARGETS-macOS=macosx.$(ARCH)
 CFLAGS-macOS=-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
 
 # iOS targets
@@ -53,32 +55,34 @@ TARGETS-iOS=iphonesimulator.x86_64 iphoneos.arm64
 CFLAGS-iOS=
 CFLAGS-iphoneos.arm64=-mios-version-min=8.0 -fembed-bitcode
 CFLAGS-iphonesimulator.x86_64=-mios-simulator-version-min=8.0
-CFLAGS-iphonesimulator.arm64=-mios-simulator-version-min=8.0
-CFLAGS-maccatalyst.arm64=--target=arm64-apple-ios-macabi -mios-version-min=8.0
+CFLAGS-iphonesimulator.arm64=-mios-simulator-version-min=14.0
+CFLAGS-maccatalyst.arm64=--target=arm64-apple-ios-macabi -mios-version-min=13.0
+CFLAGS-maccatalyst.x86_64=--target=x86_64-apple-ios-macabi -mios-version-min=13.0
 
 # tvOS targets
 TARGETS-tvOS=appletvsimulator.x86_64 appletvos.arm64
-CFLAGS-tvOS=-mtvos-version-min=9.0 -fembed-bitcode
-CFLAGS-appletvos.arm64=
-CFLAGS-appletvsimulator.x86_64=
+CFLAGS-tvOS=
+CFLAGS-appletvos.arm64=-mtvos-version-min=9.0 -fembed-bitcode
+CFLAGS-appletvsimulator.x86_64=-mtvos-simulator-version-min=9.0
 PYTHON_CONFIGURE-tvOS=ac_cv_func_sigaltstack=no
 
 # watchOS targets
 TARGETS-watchOS=watchsimulator.i386 watchos.armv7k
-CFLAGS-watchOS=-mwatchos-version-min=4.0 -fembed-bitcode
-CFLAGS-watchsimulator.i386=
-CFLAGS-watchos.armv7k=
+CFLAGS-watchOS=
+CFLAGS-watchsimulator.i386=-mwatchos-simulator-version-min=4.0
+CFLAGS-watchos.armv7k=-mwatchos-version-min=4.0 -fembed-bitcode
 PYTHON_CONFIGURE-watchOS=ac_cv_func_sigaltstack=no
 
 # .xcframework
 SDKS-xcframework=iphoneos iphonesimulator maccatalyst appletvos appletvsimulator watchos #watchsimulator
-SDKS-macOS=
+SDKS-macOS=macosx
 SDKS-iOS=iphoneos iphonesimulator maccatalyst
 SDKS-tvOS=appletvos appletvsimulator
 SDKS-watchOS=watchos watchsimulator
+ARCHS-macosx=$(ARCH)
 ARCHS-iphoneos=arm64
 ARCHS-iphonesimulator=arm64 x86_64
-ARCHS-maccatalyst=x86_64
+ARCHS-maccatalyst=arm64 x86_64
 ARCHS-appletvos=arm64
 ARCHS-appletvsimulator=x86_64
 ARCHS-watchos=armv7k
@@ -170,7 +174,7 @@ downloads/Python-$(PYTHON_VERSION).tgz:
 	mkdir -p downloads
 	if [ ! -e downloads/Python-$(PYTHON_VERSION).tgz ]; then curl -L https://www.python.org/ftp/python/$(PYTHON_VERSION)/Python-$(PYTHON_VERSION).tgz > downloads/Python-$(PYTHON_VERSION).tgz; fi
 
-PYTHON_DIR-macOS=build/macOS/Python-$(PYTHON_VERSION)-macosx.x86_64
+PYTHON_DIR-macOS=build/macOS/Python-$(PYTHON_VERSION)-macosx.$(ARCH)
 PYTHON_HOST=$(PYTHON_DIR-macOS)/dist/lib/libpython$(PYTHON_VER).a
 
 # Build for specified target (from $(TARGETS))
@@ -236,7 +240,7 @@ endif
 ifeq ($2,macOS)
 	cd $$(OPENSSL_DIR-$1) && \
 	CC="$$(CC-$1)" MACOSX_DEPLOYMENT_TARGET=$$(MACOSX_DEPLOYMENT_TARGET) \
-		./Configure darwin64-x86_64-cc no-tests --prefix=$(PROJECT_DIR)/build/$2/openssl --openssldir=$(PROJECT_DIR)/build/$2/openssl
+		./Configure darwin64-$(ARCH)-cc no-tests --prefix=$(PROJECT_DIR)/build/$2/openssl --openssldir=$(PROJECT_DIR)/build/$2/openssl
 else
 	cd $$(OPENSSL_DIR-$1) && \
 		CC="$$(CC-$1)" \
@@ -291,13 +295,13 @@ $$(PYTHON_DIR-$1)/Makefile: downloads/Python-$(PYTHON_VERSION).tgz $$(PYTHON_HOS
 	mkdir -p $$(PYTHON_DIR-$1)
 	tar zxf downloads/Python-$(PYTHON_VERSION).tgz --strip-components 1 -C $$(PYTHON_DIR-$1)
 	# Apply target Python patches
-	cd $$(PYTHON_DIR-$1) && patch -p1 < $(PROJECT_DIR)/patch/Python/Python.patch
+	#cd $$(PYTHON_DIR-$1) && patch -p1 < $(PROJECT_DIR)/patch/Python/Python.patch
 	# Configure target Python
 ifeq ($2,macOS)
 	# A locally hosted Python requires a full Setup.local configuration
 	# because there's no PYTHON_HOST_PLATFORM to cause Setup.local to be
 	# generated
-	cat $(PROJECT_DIR)/patch/Python/Setup.embedded $(PROJECT_DIR)/patch/Python/Setup.macOS-x86_64 > $$(PYTHON_DIR-$1)/Modules/Setup.local
+	cat $(PROJECT_DIR)/patch/Python/Setup.embedded $(PROJECT_DIR)/patch/Python/Setup.macOS-$(ARCH) > $$(PYTHON_DIR-$1)/Modules/Setup.local
 	# Make a fully embedded macOS build
 	cd $$(PYTHON_DIR-$1) && MACOSX_DEPLOYMENT_TARGET=$$(MACOSX_DEPLOYMENT_TARGET) ./configure \
 		--prefix=$(PROJECT_DIR)/$$(PYTHON_DIR-$1)/dist \
@@ -312,7 +316,7 @@ else
 		CC="$$(CC-$1)" LD="$$(CC-$1)" \
 		LDFLAGS="-L$(PROJECT_DIR)/$$(OPENSSL_DIR-$1) -lssl -lcrypto -L$(PROJECT_DIR)/$$(BZIP2_DIR-$1) -lbz2 -L$(PROJECT_DIR)/$$(XZ_DIR-$1) -llzma" \
 		--host=$$(MACHINE_DETAILED-$1)-apple-$(shell echo $2 | tr '[:upper:]' '[:lower:]') \
-		--build=x86_64-apple-darwin$(shell uname -r) \
+		--build=$(ARCH)-apple-darwin$(shell uname -r) \
 		--prefix=$(PROJECT_DIR)/$$(PYTHON_DIR-$1)/dist \
 		--without-doc-strings --enable-ipv6 --without-ensurepip \
 		ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
@@ -324,7 +328,7 @@ $$(PYTHON_DIR-$1)/dist/lib/libpython$(PYTHON_VER).a: build/$2/Support/OpenSSL bu
 	# Build target Python
 	cd $$(PYTHON_DIR-$1) && PATH="$(PROJECT_DIR)/$(PYTHON_DIR-macOS)/dist/bin:$(PATH)" make all install
 
-build/$2/$$(pyconfig.h-$1): $$(PYTHON_DIR-$1)/dist/include/python$(PYTHON_VER)/pyconfig.h
+build/$2/$$(pyconfig.h-$1):: $$(PYTHON_DIR-$1)/dist/include/python$(PYTHON_VER)/pyconfig.h
 	cp -f $$^ $$@
 
 # Dump vars (for test)
@@ -392,7 +396,7 @@ dist/Python-$(PYTHON_VER)-$1-support.$(BUILD_NUMBER).tar.gz: $$(BZIP2_FRAMEWORK-
 	echo "OpenSSL: $(OPENSSL_VERSION)" >> build/$1/Support/VERSIONS
 	echo "XZ: $(XZ_VERSION)" >> build/$1/Support/VERSIONS
 ifeq ($1,macOS)
-	cp -r build/$1/Python-$(PYTHON_VERSION)-macosx.x86_64/dist build/$1/python
+	cp -r build/$1/Python-$(PYTHON_VERSION)-macosx.$(ARCH)/dist build/$1/python
 	mv build/$1/Support/VERSIONS build/$1/python/VERSIONS
 	tar zcvf $$@ -X patch/Python/exclude.macOS -C build/$1/python `ls -A build/$1/python`
 else
@@ -476,7 +480,7 @@ $$(PYTHON_FRAMEWORK-$1): build/$1/libpython$(PYTHON_VER).a $$(foreach target,$$(
 	cp -f -r $$(PYTHON_DIR-$$(firstword $$(TARGETS-$1)))/dist/include/python$(PYTHON_VER) $$(PYTHON_FRAMEWORK-$1)/Headers
 	cp -f $$(filter %.h,$$^) $$(PYTHON_FRAMEWORK-$1)/Headers
 ifeq ($1,macOS)
-	mv $$(PYTHON_FRAMEWORK-$1)/Headers/pyconfig-x86_64.h $$(PYTHON_FRAMEWORK-$1)/Headers/pyconfig.h
+	mv $$(PYTHON_FRAMEWORK-$1)/Headers/pyconfig-$(ARCH).h $$(PYTHON_FRAMEWORK-$1)/Headers/pyconfig.h
 else
 	cp -f $(PROJECT_DIR)/patch/Python/pyconfig-$1.h $$(PYTHON_FRAMEWORK-$1)/Headers/pyconfig.h
 endif
