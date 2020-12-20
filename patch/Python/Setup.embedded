@@ -56,13 +56,13 @@ _sqlite3 -I$(srcdir)/Modules/_sqlite -DMODULE_NAME='\"sqlite3\"' -DSQLITE_OMIT_L
     _sqlite/statement.c \
     _sqlite/util.c
 _sre _sre.c
-_ssl _ssl.c -I$(srcdir)/../Support/OpenSSL/Headers -L$(srcdir)/../Support/OpenSSL -lOpenSSL -DUSE_SSL
+_ssl _ssl.c -I$(srcdir)/../Support/OpenSSL/Headers -DUSE_SSL
 _stat _stat.c
 _statistics _statisticsmodule.c
 _struct _struct.c
 _symtable symtablemodule.c
 _thread -DPy_BUILD_CORE -I$(srcdir)/Include/internal _threadmodule.c
-_tracemalloc _tracemalloc.c hashtable.c
+_tracemalloc _tracemalloc.c
 _weakref _weakref.c
 _uuid _uuidmodule.c
 atexit atexitmodule.c
@@ -77,7 +77,6 @@ grp grpmodule.c
 itertools itertoolsmodule.c
 math mathmodule.c
 mmap mmapmodule.c
-parser parsermodule.c
 posix -DPy_BUILD_CORE -I$(srcdir)/Include/internal posixmodule.c
 pwd pwdmodule.c
 pyexpat expat/xmlparse.c \

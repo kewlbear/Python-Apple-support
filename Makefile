@@ -32,7 +32,7 @@ BUILD_NUMBER=custom
 MACOSX_DEPLOYMENT_TARGET=10.8
 
 # Version of packages that will be compiled by this meta-package
-PYTHON_VERSION=3.10.0
+PYTHON_VERSION=3.8.3
 PYTHON_VER=$(basename $(PYTHON_VERSION))
 
 OPENSSL_VERSION_NUMBER=1.1.1
@@ -74,7 +74,7 @@ CFLAGS-watchos.armv7k=-mwatchos-version-min=4.0 -fembed-bitcode
 PYTHON_CONFIGURE-watchOS=ac_cv_func_sigaltstack=no
 
 # .xcframework
-SDKS-xcframework=iphoneos iphonesimulator maccatalyst appletvos appletvsimulator watchos #watchsimulator
+SDKS-xcframework=iphoneos iphonesimulator maccatalyst appletvos appletvsimulator watchos watchsimulator
 SDKS-macOS=macosx
 SDKS-iOS=iphoneos iphonesimulator maccatalyst
 SDKS-tvOS=appletvos appletvsimulator
@@ -108,7 +108,7 @@ update-patch:
 	# Generate a diff from the clone of the python/cpython Github repository
 	# Requireds patchutils (installable via `brew install patchutils`)
 	if [ -z "$(PYTHON_REPO_DIR)" ]; then echo "\n\nPYTHON_REPO_DIR must be set to the root of your Python github checkout\n\n"; fi
-	cd $(PYTHON_REPO_DIR) && git diff -D v$(PYTHON_VERSION) $(PYTHON_VER) | filterdiff -X $(PROJECT_DIR)/patch/Python/diff-exclude.lst -p 1 --clean > $(PROJECT_DIR)/patch/Python/Python.patch
+	cd $(PYTHON_REPO_DIR) && git diff -D v$(PYTHON_VERSION) v$(PYTHON_VER).0a1 | filterdiff -X $(PROJECT_DIR)/patch/Python/diff-exclude.lst -p 1 --clean > $(PROJECT_DIR)/patch/Python/Python.patch
 
 ###########################################################################
 # OpenSSL
@@ -174,8 +174,8 @@ downloads/Python-$(PYTHON_VERSION).tgz:
 	mkdir -p downloads
 	if [ ! -e downloads/Python-$(PYTHON_VERSION).tgz ]; then curl -L https://www.python.org/ftp/python/$(PYTHON_VERSION)/Python-$(PYTHON_VERSION).tgz > downloads/Python-$(PYTHON_VERSION).tgz; fi
 
-PYTHON_DIR-macOS=build/macOS/Python-$(PYTHON_VERSION)-macosx.$(ARCH)
-PYTHON_HOST=$(PYTHON_DIR-macOS)/dist/lib/libpython$(PYTHON_VER).a
+#PYTHON_DIR-macOS=build/macOS/Python-$(PYTHON_VERSION)-macosx.$(ARCH)
+#PYTHON_HOST=$(PYTHON_DIR-macOS)/dist/lib/libpython$(PYTHON_VER).a
 
 # Build for specified target (from $(TARGETS))
 #
@@ -256,7 +256,7 @@ $$(OPENSSL_DIR-$1)/libssl.a $$(OPENSSL_DIR-$1)/libcrypto.a: $$(OPENSSL_DIR-$1)/M
 		CC="$$(CC-$1)" \
 		CROSS_TOP="$$(dir $$(SDK_ROOT-$1)).." \
 		CROSS_SDK="$$(notdir $$(SDK_ROOT-$1))" \
-		make all && make install_sw
+		make all && make install_sw && rm *.dylib
 
 # Unpack BZip2
 $$(BZIP2_DIR-$1)/Makefile: downloads/bzip2-$(BZIP2_VERSION).tgz
@@ -290,22 +290,25 @@ $$(XZ_DIR-$1)/src/liblzma/.libs/liblzma.a: $$(XZ_DIR-$1)/Makefile
 	cd $$(XZ_DIR-$1) && make && make install
 
 # Unpack Python
-$$(PYTHON_DIR-$1)/Makefile: downloads/Python-$(PYTHON_VERSION).tgz $$(PYTHON_HOST-$1)
+$$(PYTHON_DIR-$1)/Makefile: downloads/Python-$(PYTHON_VERSION).tgz $$(PYTHON_HOST-$1) $$(OPENSSL_DIR-$1)/libssl.a $$(OPENSSL_DIR-$1)/libcrypto.a $$(BZIP2_DIR-$1)/libbz2.a $$(XZ_DIR-$1)/src/liblzma/.libs/liblzma.a
 	# Unpack target Python
 	mkdir -p $$(PYTHON_DIR-$1)
 	tar zxf downloads/Python-$(PYTHON_VERSION).tgz --strip-components 1 -C $$(PYTHON_DIR-$1)
 	# Apply target Python patches
-	#cd $$(PYTHON_DIR-$1) && patch -p1 < $(PROJECT_DIR)/patch/Python/Python.patch
+	cd $$(PYTHON_DIR-$1) && patch -p1 < $(PROJECT_DIR)/patch/Python/Python.patch
 	# Configure target Python
 ifeq ($2,macOS)
 	# A locally hosted Python requires a full Setup.local configuration
 	# because there's no PYTHON_HOST_PLATFORM to cause Setup.local to be
 	# generated
-	cat $(PROJECT_DIR)/patch/Python/Setup.embedded $(PROJECT_DIR)/patch/Python/Setup.macOS-$(ARCH) > $$(PYTHON_DIR-$1)/Modules/Setup.local
+	#cat $(PROJECT_DIR)/patch/Python/Setup.embedded $(PROJECT_DIR)/patch/Python/Setup.macOS-$(ARCH) > $$(PYTHON_DIR-$1)/Modules/Setup.local
 	# Make a fully embedded macOS build
 	cd $$(PYTHON_DIR-$1) && MACOSX_DEPLOYMENT_TARGET=$$(MACOSX_DEPLOYMENT_TARGET) ./configure \
+		CFLAGS="-I../bzip2/include -I../xz/include" \
+		LDFLAGS="-L../bzip2/lib -lbz2 -L../xz/lib -llzma" \
 		--prefix=$(PROJECT_DIR)/$$(PYTHON_DIR-$1)/dist \
-		--without-doc-strings --enable-ipv6 --without-ensurepip \
+		--with-openssl=../openssl \
+		#--without-doc-strings --enable-ipv6 --without-ensurepip \
 		$$(PYTHON_CONFIGURE-$2)
 else
 	# Copy in the embedded and platform/arch configuration
@@ -314,17 +317,19 @@ else
 		cp -f $(PROJECT_DIR)/patch/Python/Setup.$2-$$(ARCH-$1) $$(PYTHON_DIR-$1)/Modules/Setup.$2-$$(ARCH-$1); fi
 	cd $$(PYTHON_DIR-$1) && PATH=$(PROJECT_DIR)/$(PYTHON_DIR-macOS)/dist/bin:$(PATH) ./configure \
 		CC="$$(CC-$1)" LD="$$(CC-$1)" \
-		LDFLAGS="-L$(PROJECT_DIR)/$$(OPENSSL_DIR-$1) -lssl -lcrypto -L$(PROJECT_DIR)/$$(BZIP2_DIR-$1) -lbz2 -L$(PROJECT_DIR)/$$(XZ_DIR-$1) -llzma" \
+		CFLAGS="-I../openssl-$(OPENSSL_VERSION)-$1/include -I../bzip2-$(BZIP2_VERSION)-$1 -I../xz-$(XZ_VERSION)-$1/src/liblzma/api" \
+		LDFLAGS="-L../openssl-$(OPENSSL_VERSION)-$1 -lssl -lcrypto -L../bzip2-$(BZIP2_VERSION)-$1 -lbz2 -L../xz-$(XZ_VERSION)-$1/src/liblzma/.libs -llzma" \
 		--host=$$(MACHINE_DETAILED-$1)-apple-$(shell echo $2 | tr '[:upper:]' '[:lower:]') \
-		--build=$(ARCH)-apple-darwin$(shell uname -r) \
+		--build=$$(MACHINE_DETAILED-$(ARCH))-apple-darwin$(shell uname -r) \
 		--prefix=$(PROJECT_DIR)/$$(PYTHON_DIR-$1)/dist \
+		--with-openssl=../openssl-$(OPENSSL_VERSION)-$1 \
 		--without-doc-strings --enable-ipv6 --without-ensurepip \
 		ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
 		$$(PYTHON_CONFIGURE-$2)
 endif
 
 # Build Python
-$$(PYTHON_DIR-$1)/dist/lib/libpython$(PYTHON_VER).a: build/$2/Support/OpenSSL build/$2/Support/BZip2 build/$2/Support/XZ $$(PYTHON_DIR-$1)/Makefile
+$$(PYTHON_DIR-$1)/dist/lib/libpython$(PYTHON_VER).a: $$(PYTHON_DIR-$1)/Makefile
 	# Build target Python
 	cd $$(PYTHON_DIR-$1) && PATH="$(PROJECT_DIR)/$(PYTHON_DIR-macOS)/dist/bin:$(PATH)" make all install
 
