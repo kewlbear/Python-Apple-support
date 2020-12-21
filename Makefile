@@ -380,6 +380,11 @@ build/$1/xz/lib/liblzma.a: $$(foreach arch,$$(ARCHS-$1),$$(XZ_DIR-$1.$$(arch))/s
 build/$1/python/lib/libpython$(PYTHON_VER).a: $$(foreach arch,$$(ARCHS-$1),$$(PYTHON_DIR-$1.$$(arch))/dist/lib/libpython$(PYTHON_VER).a)
 	mkdir -p build/$1/python/lib
 	xcrun lipo -create -o $$@ $$^
+
+build/$1/python/include: build/$2/Support/Python
+	mkdir -p $$@
+	cp -rf $$</Headers/* $$@
+
 endef
 
 #
@@ -538,9 +543,9 @@ dist/XZ.xcframework: $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/xz/lib/liblz
 	rm -rf $@
 	xcodebuild -create-xcframework $(foreach lib,$^,-library $(lib)) -output $@
 
-dist/Python.xcframework: $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/python/lib/libpython$(PYTHON_VER).a)
+dist/Python.xcframework: $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/python/lib/libpython$(PYTHON_VER).a) | $(foreach sdk,$(SDKS-xcframework),build/$(sdk)/python/include)
 	rm -rf $@
-	xcodebuild -create-xcframework $(foreach lib,$^,-library $(lib)) -output $@
+	xcodebuild -create-xcframework $(foreach lib,$^,-library $(lib) -headers $(lib)/../../include) -output $@
 
 ###########################################################################
 # Compiling Python Libraries with binary components
