@@ -32,7 +32,7 @@ BUILD_NUMBER=custom
 MACOSX_DEPLOYMENT_TARGET=10.8
 
 # Version of packages that will be compiled by this meta-package
-PYTHON_VERSION=3.8.3
+PYTHON_VERSION=3.8.6
 PYTHON_VER=$(basename $(PYTHON_VERSION))
 
 OPENSSL_VERSION_NUMBER=1.1.1
@@ -91,6 +91,12 @@ ARCHS-watchsimulator=i386
 # override machine types for arm64
 MACHINE_DETAILED-arm64=aarch64
 MACHINE_SIMPLE-arm64=arm
+
+ifdef MACHINE_DETAILED-$(ARCH)
+MACHINE_DETAILED=$(MACHINE_DETAILED-$(ARCH))
+else
+MACHINE_DETAILED=$(ARCH)
+endif
 
 all: $(foreach os,$(OS),$(os))
 
@@ -174,8 +180,10 @@ downloads/Python-$(PYTHON_VERSION).tgz:
 	mkdir -p downloads
 	if [ ! -e downloads/Python-$(PYTHON_VERSION).tgz ]; then curl -L https://www.python.org/ftp/python/$(PYTHON_VERSION)/Python-$(PYTHON_VERSION).tgz > downloads/Python-$(PYTHON_VERSION).tgz; fi
 
-#PYTHON_DIR-macOS=build/macOS/Python-$(PYTHON_VERSION)-macosx.$(ARCH)
-#PYTHON_HOST=$(PYTHON_DIR-macOS)/dist/lib/libpython$(PYTHON_VER).a
+ifeq ($(ARCH),x86_64)
+PYTHON_DIR-macOS=build/macOS/Python-$(PYTHON_VERSION)-macosx.$(ARCH)
+PYTHON_HOST=$(PYTHON_DIR-macOS)/dist/lib/libpython$(PYTHON_VER).a
+endif
 
 # Build for specified target (from $(TARGETS))
 #
@@ -301,11 +309,11 @@ ifeq ($2,macOS)
 	# A locally hosted Python requires a full Setup.local configuration
 	# because there's no PYTHON_HOST_PLATFORM to cause Setup.local to be
 	# generated
-	#cat $(PROJECT_DIR)/patch/Python/Setup.embedded $(PROJECT_DIR)/patch/Python/Setup.macOS-$(ARCH) > $$(PYTHON_DIR-$1)/Modules/Setup.local
+	cat $(PROJECT_DIR)/patch/Python/Setup.embedded $(PROJECT_DIR)/patch/Python/Setup.macOS-$(ARCH) > $$(PYTHON_DIR-$1)/Modules/Setup.local
 	# Make a fully embedded macOS build
 	cd $$(PYTHON_DIR-$1) && MACOSX_DEPLOYMENT_TARGET=$$(MACOSX_DEPLOYMENT_TARGET) ./configure \
-		CFLAGS="-I../bzip2/include -I../xz/include" \
-		LDFLAGS="-L../bzip2/lib -lbz2 -L../xz/lib -llzma" \
+		CFLAGS="-I../openssl-$(OPENSSL_VERSION)-$1/include -I../bzip2-$(BZIP2_VERSION)-$1 -I../xz-$(XZ_VERSION)-$1/src/liblzma/api" \
+		LDFLAGS="-L../openssl-$(OPENSSL_VERSION)-$1 -lssl -lcrypto -L../bzip2-$(BZIP2_VERSION)-$1 -lbz2 -L../xz-$(XZ_VERSION)-$1/src/liblzma/.libs -llzma" \
 		--prefix=$(PROJECT_DIR)/$$(PYTHON_DIR-$1)/dist \
 		--with-openssl=../openssl \
 		#--without-doc-strings --enable-ipv6 --without-ensurepip \
@@ -320,7 +328,7 @@ else
 		CFLAGS="-I../openssl-$(OPENSSL_VERSION)-$1/include -I../bzip2-$(BZIP2_VERSION)-$1 -I../xz-$(XZ_VERSION)-$1/src/liblzma/api" \
 		LDFLAGS="-L../openssl-$(OPENSSL_VERSION)-$1 -lssl -lcrypto -L../bzip2-$(BZIP2_VERSION)-$1 -lbz2 -L../xz-$(XZ_VERSION)-$1/src/liblzma/.libs -llzma" \
 		--host=$$(MACHINE_DETAILED-$1)-apple-$(shell echo $2 | tr '[:upper:]' '[:lower:]') \
-		--build=$$(MACHINE_DETAILED-$(ARCH))-apple-darwin$(shell uname -r) \
+		--build=$(MACHINE_DETAILED)-apple-darwin$(shell uname -r) \
 		--prefix=$(PROJECT_DIR)/$$(PYTHON_DIR-$1)/dist \
 		--with-openssl=../openssl-$(OPENSSL_VERSION)-$1 \
 		--without-doc-strings --enable-ipv6 --without-ensurepip \
