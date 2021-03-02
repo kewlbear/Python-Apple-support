@@ -1,3 +1,9 @@
+**This branch contains modifications to build XCFrameworks instead of fat libraries.**
+
+Run::
+
+    make xcframeworks
+
 Python Apple Support
 ====================
 
